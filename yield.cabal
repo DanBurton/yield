@@ -1,0 +1,24 @@
+name:                yield
+version:             0.1.0.0
+synopsis:            Cooperative control
+
+homepage:            https://github.com/DanBurton/yield#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Dan Burton
+maintainer:          danburton.email@gmail.com
+
+category:            Control
+build-type:          Simple
+cabal-version:       >=1.8
+
+library
+  exposed-modules:     Control.Yield,
+                       Control.Yield.Proxy,
+                       Control.Yield.Pipe,
+                       Control.Yield.Category
+  other-modules:       Util
+  build-depends:       base >= 4.6,
+                       transformers-base >= 0.4,
+                       transformers >= 0.3,
+                       mtl >= 2.1
