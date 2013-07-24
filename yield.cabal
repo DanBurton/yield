@@ -19,6 +19,5 @@ library
                        Control.Yield.Category
   other-modules:       Util
   build-depends:       base >= 4.6,
-                       transformers-base >= 0.4,
                        transformers >= 0.3,
                        mtl >= 2.1

@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-} -- coverage condition...
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE CPP #-}
 
 module Control.Yield (
   -- * Types
@@ -56,7 +55,6 @@ import Util
 import Control.Arrow
 import Control.Applicative
 import Control.Category
-import Control.Monad.Base
 import Data.Monoid
 import Data.Foldable
 
@@ -91,18 +89,17 @@ newtype Consuming r m i o
 type Resumable o i m r r'
   = Either (ProducerState i o m r, r') (ProducerState o i m r', r)
 
-#define AMonad(m) Applicative m, Monad m
 
 -- Basic introduction and elimination
 ----------------------------------------------------------------
 
-yield :: (AMonad(m)) => o -> Producing o i m i
+yield :: (Monad m) => o -> Producing o i m i
 yield o = Producing $ return $ Produced o $ Consuming return
 
 
 -- The first argument is just a specialization of
 -- (forall x. m x -> m' x)
-pfold :: (AMonad(n))
+pfold :: (Monad n)
   => (forall x. m x -> n x) -- (m (ProducerState o i m r) -> m' (ProducerState o i m r))
   -> (o -> n i) -> Producing o i m r -> n r
 pfold morph yield' = go where
@@ -123,7 +120,7 @@ overProduction f k = Consuming (f . provide k)
 -- overProduction f ∘ overProduction g = overProduction (f ∘ g)
 
 
-overConsumption :: (AMonad(m))
+overConsumption :: (Monad m)
   => (Consuming r m i o -> Consuming r m i' o)
   ->  Producing o i m r -> Producing o i' m r
 overConsumption f p = Producing $ resume p >>= \s -> case s of
@@ -132,7 +129,7 @@ overConsumption f p = Producing $ resume p >>= \s -> case s of
 -- overConsumption f ∘ overConsumption g = overConsumption (f ∘ g)
 
 
-afterYielding :: (AMonad(m))
+afterYielding :: (Monad m)
   => (Producing o i m r -> Producing o i m r)
   ->  Producing o i m r -> Producing o i m r
 afterYielding = overConsumption . overProduction
@@ -142,9 +139,9 @@ afterYielding = overConsumption . overProduction
 -- Meaningful specializations of pfold
 --------------------------------------------------------------------
 
-replaceYield :: (MonadBase m m')
-  => (o -> m' i) -> Producing o i m r -> m' r
-replaceYield = pfold liftBase
+replaceYield :: (Monad m, MonadTrans t, Monad (t m))
+  => (o -> t m i) -> Producing o i m r -> t m r
+replaceYield = pfold lift
 -- replaceYield yield x = x
 -- replaceYield f' ∘ replaceYield f = replaceYield (f' <=< liftBase ∘ f)
 -- replaceYield return =?= lift ∘ selfConnect
@@ -155,31 +152,31 @@ replaceYield = pfold liftBase
 --   Producing i i m r -> m' r
 
 
-foreverYield :: (AMonad(m)) => (i -> m o) -> Consuming r m i o
+foreverYield :: (Monad m) => (i -> m o) -> Consuming r m i o
 foreverYield k = replaceYield (lift . k >=> yield) `overProduction` id
 -- foreverYield return = id ∷ Consuming r m i i
 
 
-yieldingTo :: (AMonad(m)) => (o -> m i) -> Producing o i m r -> m r
+yieldingTo :: (Monad m) => (o -> m i) -> Producing o i m r -> m r
 yieldingTo = pfold id
 -- if the type system were powerful enough,
 -- yieldingTo = replaceYield
 
 
-foreach :: (AMonad(m)) => Producing o i m r -> (o -> m i) -> m r
+foreach :: (Monad m) => Producing o i m r -> (o -> m i) -> m r
 foreach = flip yieldingTo
 -- p `foreach` k = p $- foreverYield k
 
 
-($//) :: (MonadBase m m')
-  => Producing o i m r -> (o -> m' i) -> m' r
+($//) :: (Monad m, MonadTrans t, Monad (t m))
+  => Producing o i m r -> (o -> t m i) -> t m r
 p $// k = replaceYield k p
 
 
 -- composable replaceYield with monoid laws
-(/$/) :: (MonadBase m m')
-  => (a -> Producing o i m r) -> (o -> m' i)
-  -> (a -> m' r)
+(/$/) :: (Monad m, MonadTrans t, Monad (t m))
+  => (a -> Producing o i m r) -> (o -> t m i)
+  -> (a -> t m r)
 k1 /$/ k2 = \i -> k1 i $// k2
 -- yield /$/ x = x
 -- x /$/ yield = x
@@ -194,18 +191,18 @@ k1 /$/ k2 = \i -> k1 i $// k2
 ------------------------------------------------------------------
 
 infixl 0 $-
-($-) :: (AMonad(m)) => Producing a b m r -> Consuming r m a b -> m r
+($-) :: (Monad m) => Producing a b m r -> Consuming r m a b -> m r
 p $- c = resume p >>= \s -> case s of
   Done r -> return r
   Produced o k -> provide c o $- k
 
 
 infixl 0 $~
-($~) :: (AMonad(m)) => Producing a b m r -> (a -> Producing b a m r) -> m r
+($~) :: (Monad m) => Producing a b m r -> (a -> Producing b a m r) -> m r
 p $~ k = p $- Consuming k
 
 
-connectResume :: (AMonad(m)) => Consuming r m b a -> Consuming r' m a b -> b -> m (Resumable b a m r r')
+connectResume :: (Monad m) => Consuming r m b a -> Consuming r' m a b -> b -> m (Resumable b a m r r')
 connectResume k1 k2 = \b -> resume (provide k1 b) >>= \s -> case s of
   Done r -> return (Right (Produced b k2, r))
   (Produced a k1') -> resume (provide k2 a) >>= \s2 -> case s2 of
@@ -216,20 +213,20 @@ connectResume k1 k2 = \b -> resume (provide k1 b) >>= \s -> case s of
 -- Misc
 ------------------------------------------------------------------
 
-yieldEach :: (AMonad(m), Foldable f) => f a -> Producing a b m ()
+yieldEach :: (Monad m, Foldable f) => f a -> Producing a b m ()
 yieldEach = mapM_ yield
 
 
-echo :: (AMonad(m)) => Int -> Consuming a m a a
+echo :: (Monad m) => Int -> Consuming a m a a
 echo n | n >= 0 = Consuming $ replicateK n yield
 echo _ = Consuming $ \_ -> fail "echo requires a nonnegative argument"
 
 
-echo_ :: (AMonad(m)) => Int -> Consuming () m a a
+echo_ :: (Monad m) => Int -> Consuming () m a a
 echo_ = voidC . echo
 
 
-voidC :: (AMonad(m)) => Consuming r m i o -> Consuming () m i o
+voidC :: (Monad m) => Consuming r m i o -> Consuming () m i o
 voidC = overProduction void
 
 
@@ -237,7 +234,7 @@ voidC = overProduction void
 ------------------------------------------------------------------
 
 -- hoist = map
-hoist :: (AMonad(n))
+hoist :: (Monad n)
   {- => (  m  (ProducerState o i m r)
      -> m' (ProducerState o i m r)) -}
   => (forall x. m x -> n x)
@@ -250,7 +247,7 @@ hoist f = pfold (lift . f) yield
 -------------------------------------------------------------------
 
 -- squash = join
-squash :: (AMonad(m))
+squash :: (Monad m)
   => Producing o i (Producing o i m) r
   -> Producing o i m r
 squash = yieldingTo yield
@@ -260,7 +257,7 @@ squash = yieldingTo yield
 
 
 -- embed = bind
-embed :: (AMonad(n))
+embed :: (Monad n)
   => (forall x. m x -> Producing i o n x)
   -> Producing i o m r -> Producing i o n r
 embed f m = squash (hoist f m)
@@ -270,13 +267,13 @@ embed f m = squash (hoist f m)
 -------------------------------------------------
 
 -- selfConnection = copoint
-selfConnection :: (AMonad(m)) => Producing i i m r -> m r
+selfConnection :: (Monad m) => Producing i i m r -> m r
 selfConnection = yieldingTo return
 -- selfConnection (flatten x) =?= selfConnection (hoist selfConnection x)
 
 
 -- inputThrough = extend
-inputThrough :: (AMonad(n), AMonad(m))
+inputThrough :: (Monad n, Monad m)
   => (forall x. Producing j k m x -> n x)
   -> Producing i k m r -> Producing i j n r
 inputThrough morph = go where
@@ -290,7 +287,7 @@ inputThrough morph = go where
 
 
 -- through = duplicate
-through :: (AMonad(m))
+through :: (Monad m)
   => Producing o                i m  r
   -> Producing o x (Producing x i m) r
 through = inputThrough id
@@ -300,23 +297,23 @@ through = inputThrough id
 -- Manipulating layers of Producing
 ------------------------------------------------------------
 
-insert0 :: (AMonad(m)) => m r -> Producing o i m r
+insert0 :: (Monad m) => m r -> Producing o i m r
 insert0 = lift
 
 
-insert1 :: (AMonad(m))
+insert1 :: (Monad m)
   => Producing o i m r
   -> Producing o i (Producing o' i' m) r
 insert1 = hoist insert0
 
 
-insert2 :: (AMonad(m))
+insert2 :: (Monad m)
   => Producing o i (Producing o' i' m) r
   -> Producing o i (Producing o' i' (Producing o'' i'' m)) r
 insert2 = hoist insert1
 
 
-commute :: (AMonad(m))
+commute :: (Monad m)
   => Producing a b (Producing c d m) r
   -> Producing c d (Producing a b m) r
 commute p = p' $- idP where
@@ -335,7 +332,7 @@ commute p = p' $- idP where
 ----------------------------------------------------------------
 
 -- a common pattern in implementing instances
-rewrap :: (MonadTrans t, AMonad(m)) =>
+rewrap :: (MonadTrans t, Monad m) =>
   Consuming r m i o -> i -> t m (ProducerState o i m r)
 rewrap p a = lift (resume (provide p a))
 
@@ -343,16 +340,16 @@ rewrap p a = lift (resume (provide p a))
 -- Producing instances
 ---------------------------------
 
-instance (AMonad(m)) => Functor (Producing o i m) where
+instance (Monad m) => Functor (Producing o i m) where
    fmap = liftM
 
 
-instance (AMonad(m)) => Applicative (Producing o i m) where
+instance (Monad m) => Applicative (Producing o i m) where
    pure = return
    (<*>) = ap
 
 
-instance (AMonad(m)) => Monad (Producing o i m) where
+instance (Monad m) => Monad (Producing o i m) where
    return x = lift (return x)
    p >>= f = Producing $ resume p >>= \s -> case s of
      Done r -> resume (f r)
@@ -364,30 +361,26 @@ instance MonadTrans (Producing o i) where
   lift m = Producing (liftM Done m)
 
 
-instance (AMonad(m)) => MonadBase m (Producing o i m) where
-  liftBase = lift
-
-
-instance (AMonad(m), MonadIO m) => MonadIO (Producing o i m) where
+instance (Monad m, MonadIO m) => MonadIO (Producing o i m) where
   liftIO = lift . liftIO
 
 
 -- mtl instances for Producing
 -----------------------------------
 
-instance (AMonad(m), MonadReader r m) => MonadReader r (Producing o i m) where
+instance (Monad m, MonadReader r m) => MonadReader r (Producing o i m) where
   ask = lift ask
   local f = hoist (local f)
   reader = lift . reader
 
 
-instance (AMonad(m), MonadState r m) => MonadState r (Producing o i m) where
+instance (Monad m, MonadState r m) => MonadState r (Producing o i m) where
   get = lift get
   put = lift . put
   state = lift . state
 
 
-instance (AMonad(m), Monoid w, MonadWriter w m) => MonadWriter w (Producing o i m) where
+instance (Monad m, Monoid w, MonadWriter w m) => MonadWriter w (Producing o i m) where
   writer = lift . writer
   tell = lift . tell
   listen m = Producing $ listen (resume m) >>= \(s, w) -> case s of
@@ -402,7 +395,7 @@ instance (AMonad(m), Monoid w, MonadWriter w m) => MonadWriter w (Producing o i 
       let k' = pass . provide k
       in return (Produced o (Consuming k'), id)
 
-instance (AMonad(m), MonadError e m) => MonadError e (Producing o i m) where
+instance (Monad m, MonadError e m) => MonadError e (Producing o i m) where
   throwError = lift . throwError
   p `catchError` h = lift (safely (resume p)) >>= \s -> case s of
     Left err -> h err
@@ -411,20 +404,20 @@ instance (AMonad(m), MonadError e m) => MonadError e (Producing o i m) where
       i <- yield o
       provide k i `catchError` h
     where
-      safely m = fmap Right m `catchError` \e -> return (Left e)
+      safely m = liftM Right m `catchError` \e -> return (Left e)
 
-instance (AMonad(m), MonadCont m) => MonadCont (Producing o i m) where
+instance (Monad m, MonadCont m) => MonadCont (Producing o i m) where
   callCC f = Producing $ callCC $ \cont ->
     resume (f $ lift . cont . Done)
 
 -- Consuming instances
 --------------------------------------
 
-instance (AMonad(m)) => Functor (Consuming r m a) where
+instance (Monad m) => Functor (Consuming r m a) where
   fmap f = overProduction $ replaceYield (yield . f)
 
 
-instance (AMonad(m)) => Applicative (Consuming r m a) where
+instance (Monad m) => Applicative (Consuming r m a) where
   pure a = arr (const a)
   kf <*> kx = Consuming $ \a -> rewrap kf a >>= \s -> case s of
     Done r -> return r
@@ -434,7 +427,7 @@ instance (AMonad(m)) => Applicative (Consuming r m a) where
         yield (f x) >>= provide (kf' <*> kx')
 
 
-instance (AMonad(m)) => Category (Consuming r m) where
+instance (Monad m) => Category (Consuming r m) where
   id = Consuming $ let go = yield >=> go in go
   k2 . k1 = Consuming $ rewrap k1 >=> \s -> case s of
     Done r -> return r
@@ -444,24 +437,24 @@ instance (AMonad(m)) => Category (Consuming r m) where
         yield c >>= provide (k2' . k1')
 
 
-instance (AMonad(m)) => Arrow (Consuming r m) where
+instance (Monad m) => Arrow (Consuming r m) where
   arr f = Consuming go where go = yield . f >=> go
   first k = Consuming $ \(b, d) -> rewrap k b >>= \s -> case s of
     Done r -> return r
     Produced c k' -> yield (c, d) >>= provide (first k')
 
 
-instance (AMonad(m), Monoid r) => ArrowZero (Consuming r m) where
+instance (Monad m, Monoid r) => ArrowZero (Consuming r m) where
   zeroArrow = Consuming $ \_ -> return mempty
 
 
-instance (AMonad(m), Monoid r) => ArrowPlus (Consuming r m) where
+instance (Monad m, Monoid r) => ArrowPlus (Consuming r m) where
   k1 <+> k2 = Consuming $ \i -> rewrap k1 i >>= \s -> case s of
     Done r -> liftM (r <>) (provide k2 i)
     Produced o k1' -> yield o >>= provide (k1' <+> k2)
 
 
-instance (AMonad(m)) => ArrowChoice (Consuming r m) where
+instance (Monad m) => ArrowChoice (Consuming r m) where
   left k = Consuming go where
     go = \e -> case e of
       Right d -> yield (Right d) >>= go
