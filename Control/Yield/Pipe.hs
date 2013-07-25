@@ -7,7 +7,14 @@ import Control.Yield.Proxy
 
 import Prelude hiding ((.), id)
 import Control.Category
+import Control.Arrow
 import Control.Applicative
+import Control.Monad
+import Data.Monoid
+import Util
+
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Class
 
 newtype Pipe r m a b
   = Pipe { unPipe :: Proxy r m '((),b) '((),a) }
@@ -31,3 +38,128 @@ await = request ()
 pipe :: PipeM a b m r -> Pipe r m a b
 pipe p = Pipe $ proxyC $ const p
 
+
+type PullPipe = Pipe
+newtype PushPipe r m a b
+  = PushPipe { unPushPipe :: a -> PipeM a b m r }
+
+
+fromPushProxy :: (Monad m)
+  => PushProxy r m '((),b) '((),a)
+  -> PushPipe r m a b
+fromPushProxy (PushProxy p) = PushPipe p
+
+toPushProxy :: (Monad m)
+  => PushPipe r m a b
+  -> PushProxy r m '((),b) '((),a)
+toPushProxy (PushPipe p) = PushProxy p
+
+pullToPushPipe :: (Monad m) => PullPipe r m a b -> PushPipe r m a b
+pullToPushPipe (Pipe (Proxy p)) = undefined -- TODO
+
+
+pushToPullPipe :: (Monad m) => PushPipe r m a b -> a -> PullPipe r m a b
+pushToPullPipe (PushPipe p) a = pipe $ p a
+
+-- Producing () a (Producing b () m) r
+-- fromProxy :: Proxy r m '((),a) '((),b) -> PushPipe r m a b
+-- fromProxy (Proxy (Consuming k)) = PushPipe k
+
+data StateCommand s
+  = Get
+  | Put s
+
+stateI :: (Monad m) => s -> Consuming r m (StateCommand s) s
+stateI s0 = delay (go s0) where
+  go s = yield s >>= \m -> case m of
+    Get -> go s
+    Put s' -> go s'
+
+instance (Monad m) => Category (PushPipe r m) where
+  id = fromPushProxy idPush
+  p1 . p2 = fromPushProxy (toPushProxy p2 #.# toPushProxy p1)
+
+infixl 1 &
+(&) :: a -> (a -> b) -> b
+(&) = flip ($)
+
+
+access2 :: (Monad m)
+  => Producing o i (Producing o' i' (Producing o'' i'' m)) r
+  -> Producing o'' i'' (Producing o i (Producing o' i' m)) r
+access2 = commute . hoist commute
+-- id = id
+-- commute . commute = id
+-- access2 . access2 . access2 = id
+
+replaceRequest :: (Monad m, MonadTrans t, Monad (t m))
+  => (uO -> Producing dO dI (t m) uI)
+  -> Producing dO dI (Producing uO uI m) r
+  -> Producing dO dI (t m) r
+replaceRequest f p = yieldingTo f (insert2 (commute p))
+-- replaceRequest request x = x
+
+requestingTo :: (Monad m)
+  => (uO -> Producing dO dI m uI)
+  -> Producing dO dI (Producing uO uI m) r
+  -> Producing dO dI m r
+requestingTo f p = yieldingTo f (commute p)
+-- requestingTo request = hoist squash
+
+replaceAwait :: (Monad m, MonadTrans t, Monad (t m))
+  => Producing o () (t m) i
+  -> PipeM i o m r
+  -> Producing o () (t m) r
+replaceAwait await' = replaceRequest (const await')
+-- replaceAwait await x = x
+
+awaitingTo :: (Monad m)
+  => Producing o () m i
+  -> PipeM i o m r
+  -> Producing o () m r
+awaitingTo a = requestingTo (const a)
+-- awaitingTo await = hoist squash
+
+instance (Monad m) => Arrow (PushPipe r m) where
+  arr f = PushPipe $ foreverK $ \a -> yield (f a) >> await
+  first (PushPipe p0) = PushPipe $ \(a,d) ->
+    p0 a
+      & insert2
+      & replaceYield yield'
+      & replaceAwait await'
+      & access2
+      $- stateI d
+    where
+      yield' b = do
+        d <- lift $ lift $ yield Get
+        yield (b,d)
+      await' = do
+        (a,d) <- await
+        lift $ lift $ yield (Put d)
+        return a
+
+instance (Monad m) => Functor (PushPipe r m a) where
+  fmap f p = arr f . p
+
+instance (Monad m) => Applicative (PushPipe r m a) where
+  pure z = arr (const z)
+  af <*> ax = fmap (uncurry ($)) (af &&& ax)
+
+instance (Monad m, Monoid r) => ArrowZero (PushPipe r m) where
+  zeroArrow = PushPipe $ \_ -> return mempty
+
+instance (Monad m, Monoid r) => ArrowPlus (PushPipe r m) where
+  -- a b c -> a b c -> a b c
+  p1 <+> p2 = undefined
+
+instance (Monad m) => ArrowChoice (PushPipe r m) where
+  -- a b c -> a (Either b d) (Either c d)
+  left p = undefined
+
+instance (Monad m) => ArrowApply (PushPipe r m) where
+  -- a (a b c, b) c
+  app = undefined
+
+instance (Monad m) => ArrowLoop (PushPipe r m) where
+  -- a (b, d) (c, d) -> a b c
+  loop p = undefined

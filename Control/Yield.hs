@@ -13,6 +13,7 @@ module Control.Yield (
   pfold,
 
   -- * Handy conversion functions
+  delay,
   overConsumption,
   overProduction,
   afterYielding,
@@ -112,6 +113,12 @@ pfold morph yield' = go where
 
 -- Handy conversion functions
 -----------------------------------------------------------------
+
+delay :: (Monad m) => Producing o i m r -> Consuming r m i o
+delay p = Consuming $ \i -> lift (resume p) >>= \s -> case s of
+  Done r -> return r
+  Produced o k -> yield o >>= provide (delay $ provide k i)
+
 
 overProduction ::
     (Producing o i m r -> Producing o' i m' r')
@@ -297,19 +304,19 @@ through = inputThrough id
 -- Manipulating layers of Producing
 ------------------------------------------------------------
 
-insert0 :: (Monad m) => m r -> Producing o i m r
+insert0 :: (Monad m, MonadTrans t, Monad (t m)) => m r -> t m r
 insert0 = lift
 
 
-insert1 :: (Monad m)
+insert1 :: (Monad m, MonadTrans t, Monad (t m))
   => Producing o i m r
-  -> Producing o i (Producing o' i' m) r
+  -> Producing o i (t m) r
 insert1 = hoist insert0
 
 
-insert2 :: (Monad m)
+insert2 :: (Monad m, MonadTrans t, Monad (t m))
   => Producing o i (Producing o' i' m) r
-  -> Producing o i (Producing o' i' (Producing o'' i'' m)) r
+  -> Producing o i (Producing o' i' (t m)) r
 insert2 = hoist insert1
 
 
