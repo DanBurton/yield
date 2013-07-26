@@ -13,7 +13,6 @@ import Control.Monad
 import Data.Monoid
 import Util
 
-import Control.Monad.Trans.State
 import Control.Monad.Trans.Class
 
 newtype Pipe r m a b
@@ -137,7 +136,9 @@ instance (Monad m, Monoid r) => ArrowZero (PushPipe r m) where
 
 instance (Monad m, Monoid r) => ArrowPlus (PushPipe r m) where
   -- a b c -> a b c -> a b c
-  p1 <+> p2 = undefined
+  p1 <+> p2 = to (from p1 <+> from p2) where
+    from (PushPipe p) = unProxy $ pushToPull $ PushProxy p
+    to c = PushPipe $ unPullProxy $ pullToPush $ Proxy c
 
 instance (Monad m) => ArrowChoice (PushPipe r m) where
   -- a b c -> a (Either b d) (Either c d)

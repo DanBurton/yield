@@ -20,15 +20,15 @@ type ProxyM d u m r =
 -- d = (dI, dO)
 -- u = (uO, uI)
 newtype Proxy r m d u = Proxy
-  (Consuming r (Producing (Fst u) (Snd u) m)
-   (Fst d) (Snd d))
+  { unProxy :: Consuming r (Producing (Fst u) (Snd u) m)
+   (Fst d) (Snd d) }
 
 -- blocked on (d)ownstream
 type PullProxy = Proxy
 
 -- blocked on (u)pstream
 newtype PushProxy r m d u = PushProxy
-  { unPull :: (Snd u) -> ProxyM d u m r }
+  { unPullProxy :: (Snd u) -> ProxyM d u m r }
 
 
 reflect :: Monad m
