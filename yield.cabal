@@ -20,4 +20,5 @@ library
   other-modules:       Util
   build-depends:       base >= 4.6,
                        transformers >= 0.3,
-                       mtl >= 2.1
+                       mtl >= 2.1,
+                       either >= 3.4
