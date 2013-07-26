@@ -70,6 +70,7 @@ import Control.Monad.Error.Class
 import Control.Monad.Cont.Class
 import Control.Monad.Trans.Class
 
+import Control.Monad.Fix
 
 -- Types
 ---------------------------------------------------------------
@@ -119,6 +120,10 @@ delay p = Consuming $ \i -> lift (resume p) >>= \s -> case s of
   Done r -> return r
   Produced o k -> yield o >>= provide (delay $ provide k i)
 
+{- ???
+expedite :: (MonadFix m) => Consuming r m i o -> Producing o i m r
+expedite = undefined
+-}
 
 overProduction ::
     (Producing o i m r -> Producing o' i m' r')
@@ -373,6 +378,11 @@ instance (Monad m, MonadIO m) => MonadIO (Producing o i m) where
   liftIO = lift . liftIO
 
 
+{- ???
+instance (MonadFix m) => MonadFix (Producing o i m) where
+  mfix = undefined
+-}
+
 -- mtl instances for Producing
 -----------------------------------
 
@@ -415,8 +425,8 @@ instance (Monad m, MonadError e m) => MonadError e (Producing o i m) where
       safely m = liftM Right m `catchError` \e -> return (Left e)
 
 instance (Monad m, MonadCont m) => MonadCont (Producing o i m) where
-  callCC f = Producing $ callCC $ \cont ->
-    resume (f $ lift . cont . Done)
+  callCC f = Producing $ callCC $ \k ->
+    resume (f $ lift . k . Done)
 
 -- Consuming instances
 --------------------------------------
