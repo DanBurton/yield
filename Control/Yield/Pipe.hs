@@ -154,13 +154,16 @@ instance (Monad m) => ArrowChoice (PushPipe r m) where
 instance (Monad m) => ArrowApply (PushPipe r m) where
   -- a (a b c, b) c
   app = PushPipe $ go where
-    go (p, b) = do
-      e <- lift $ lift $ runEitherT $ p'
+    go (PushPipe p, b) = do
+      e <- lift $ lift $ runEitherT $ p' b
       case e of
         Left c -> yield c >> await >>= go
         Right r -> return r
       where
-        p' = undefined
+        p' = awaitingTo (return b) . p /$/ yield'
+        yield' c = EitherT (return $ Left c)
+
+
 
 {-
 instance (Monad m) => ArrowLoop (PushPipe r m) where
