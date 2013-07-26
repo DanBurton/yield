@@ -13,6 +13,7 @@ import Control.Monad
 import Data.Monoid
 import Util
 
+import Control.Monad.Trans.Either
 import Control.Monad.Trans.Class
 
 newtype Pipe r m a b
@@ -152,8 +153,17 @@ instance (Monad m) => ArrowChoice (PushPipe r m) where
 
 instance (Monad m) => ArrowApply (PushPipe r m) where
   -- a (a b c, b) c
-  app = undefined
+  app = PushPipe $ go where
+    go (p, b) = do
+      e <- lift $ lift $ runEitherT $ p'
+      case e of
+        Left c -> yield c >> await >>= go
+        Right r -> return r
+      where
+        p' = undefined
 
+{-
 instance (Monad m) => ArrowLoop (PushPipe r m) where
   -- a (b, d) (c, d) -> a b c
   loop p = undefined
+-}
