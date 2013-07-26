@@ -92,19 +92,6 @@ access2 = commute . hoist commute
 -- commute . commute = id
 -- access2 . access2 . access2 = id
 
-replaceRequest :: (Monad m, MonadTrans t, Monad (t m))
-  => (uO -> Producing dO dI (t m) uI)
-  -> Producing dO dI (Producing uO uI m) r
-  -> Producing dO dI (t m) r
-replaceRequest f p = yieldingTo f (insert2 (commute p))
--- replaceRequest request x = x
-
-requestingTo :: (Monad m)
-  => (uO -> Producing dO dI m uI)
-  -> Producing dO dI (Producing uO uI m) r
-  -> Producing dO dI m r
-requestingTo f p = yieldingTo f (commute p)
--- requestingTo request = hoist squash
 
 replaceAwait :: (Monad m, MonadTrans t, Monad (t m))
   => Producing o () (t m) i

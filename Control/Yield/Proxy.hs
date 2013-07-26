@@ -54,6 +54,20 @@ request :: (Monad m) =>
   uO -> ProxyM '(dO,dI) '(uO,uI) m uI
 request o = lift (yield o)
 
+replaceRequest :: (Monad m, MonadTrans t, Monad (t m))
+  => (uO -> Producing dO dI (t m) uI)
+  -> ProxyM '(dI,dO) '(uO,uI) m r
+  -> Producing dO dI (t m) r
+replaceRequest req' p = yieldingTo req' (insert2 (commute p))
+-- replaceRequest request x = x
+
+requestingTo :: (Monad m)
+  => (uO -> Producing dO dI m uI)
+  -> Producing dO dI (Producing uO uI m) r
+  -> Producing dO dI m r
+requestingTo req' p = yieldingTo req' (commute p)
+-- requestingTo request x = hoist squash x
+
 proxyC :: ((Fst d) -> ProxyM d u m r) -> Proxy r m d u
 proxyC = Proxy . Consuming
 
@@ -105,9 +119,4 @@ idPush :: (Monad m)
   => PushProxy r m '(a,b) '(a,b)
 idPush = pullToPush idProxy
 
-{-
-instance (Monad m) => Category (Proxy r m) where
-  id = idProxy
-  (.) = (=.=)
--}
 
