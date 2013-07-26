@@ -13,6 +13,7 @@ import Control.Monad
 import Data.Monoid
 import Util
 
+import Control.Monad.Fix
 import Control.Monad.Trans.Either
 import Control.Monad.Trans.Class
 
@@ -74,6 +75,20 @@ stateI s0 = delay (go s0) where
   go s = yield s >>= \m -> case m of
     Get -> go s
     Put s' -> go s'
+
+
+data RStateCommand s
+  = RGet
+  | RPut s
+
+
+{-
+stateRI :: (MonadFix m) => Producing s (RStateCommand s) m r
+stateRI = Producing $ liftM fst $ mfix $ ~(st, upcomingCommand) -> case st of
+  ~(Produced s k) -> Produced `liftM` case upcomingCommand of
+    RGet -> provide k RGet
+    RPut s' -> return (Produced s' k)
+-}
 
 instance (Monad m) => Category (PushPipe r m) where
   id = fromPushProxy idPush
@@ -164,9 +179,23 @@ instance (Monad m) => ArrowApply (PushPipe r m) where
         yield' c = EitherT (return $ Left c)
 
 
-
 {-
-instance (Monad m) => ArrowLoop (PushPipe r m) where
+instance (MonadFix m) => ArrowLoop (PushPipe r m) where
   -- a (b, d) (c, d) -> a b c
-  loop p = undefined
+  loop p = PushPipe go where
+    go b =
+      p b
+        & insert2
+        & replaceYield yield'
+        & replaceAwait await'
+        & access2
+        $- stateRI d
+      where
+        yield' (b,d) = do
+          lift $ lift $ yield (RPut d)
+          yield b
+        await' = do
+          a <- await
+          d <- lift $ lift $ yield RGet
+          return (a,d)
 -}
