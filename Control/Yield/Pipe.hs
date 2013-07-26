@@ -142,7 +142,13 @@ instance (Monad m, Monoid r) => ArrowPlus (PushPipe r m) where
 
 instance (Monad m) => ArrowChoice (PushPipe r m) where
   -- a b c -> a (Either b d) (Either c d)
-  left p = undefined
+  left (PushPipe p) = PushPipe (skipToB >=> p') where
+    p' = const await' \$\ p /$/ yield'
+    skipToB (Left b) = return b
+    skipToB (Right d) = yield (Right d) >> await'
+    await' = await >>= skipToB
+    yield' = yield . Left
+
 
 instance (Monad m) => ArrowApply (PushPipe r m) where
   -- a (a b c, b) c

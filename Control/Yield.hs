@@ -180,6 +180,7 @@ foreach = flip yieldingTo
 p $// k = replaceYield k p
 
 
+infixr 4 /$/
 -- composable replaceYield with monoid laws
 (/$/) :: (Monad m, MonadTrans t, Monad (t m))
   => (a -> Producing o i m r) -> (o -> t m i)
