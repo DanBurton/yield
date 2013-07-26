@@ -61,6 +61,12 @@ replaceRequest :: (Monad m, MonadTrans t, Monad (t m))
 replaceRequest req' p = yieldingTo req' (insert2 (commute p))
 -- replaceRequest request x = x
 
+(\$\) :: (Monad m, MonadTrans t, Monad (t m))
+  => (uO -> Producing dO dI (t m) uI)
+  -> (x -> ProxyM '(dI,dO) '(uO,uI) m r)
+  -> x -> Producing dO dI (t m) r
+req' \$\ p = \x -> replaceRequest req' (p x)
+
 requestingTo :: (Monad m)
   => (uO -> Producing dO dI m uI)
   -> Producing dO dI (Producing uO uI m) r
