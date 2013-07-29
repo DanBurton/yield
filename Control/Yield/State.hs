@@ -1,4 +1,6 @@
 
+module Control.Yield.State where
+
 import Control.Yield
 import Control.Monad
 import Control.Monad.Fix

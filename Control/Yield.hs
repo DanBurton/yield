@@ -1,12 +1,16 @@
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances #-} -- coverage condition...
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE FlexibleInstances #-}     -- mtl instances
+{-# LANGUAGE MultiParamTypeClasses #-} -- mtl instances
+{-# LANGUAGE UndecidableInstances #-}  -- coverage condition (mtl instances)
+{-# LANGUAGE Rank2Types #-}            -- for hoist and inputThrough
 
 module Control.Yield (
   -- * Types
-  Producing(..),
+  Producing,
+  resume,
+  fromStep,
   Consuming(..),
   ProducerState(..),
+  Resumable,
 
   -- * Basic introduction and elimination
   yield,
@@ -52,6 +56,7 @@ module Control.Yield (
   ) where
 
 import Util
+import Control.Yield.Internal
 
 import Control.Arrow
 import Control.Applicative
@@ -74,7 +79,7 @@ import Control.Monad.Fix
 
 -- Types
 ---------------------------------------------------------------
-
+{-
 newtype Producing o i m r
   = Producing { resume :: m (ProducerState o i m r) }
 
@@ -90,7 +95,7 @@ newtype Consuming r m i o
 
 type Resumable o i m r r'
   = Either (ProducerState i o m r, r') (ProducerState o i m r', r)
-
+-}
 
 -- Basic introduction and elimination
 ----------------------------------------------------------------
@@ -105,7 +110,7 @@ pfold :: (Monad n)
   => (forall x. m x -> n x) -- (m (ProducerState o i m r) -> m' (ProducerState o i m r))
   -> (o -> n i) -> Producing o i m r -> n r
 pfold morph yield' = go where
-  go p = morph (resume p) >>= \s -> case s of
+  go p = morph (unProducing p) >>= \s -> case s of
     Done r -> return r
     Produced o k -> yield' o >>= go . provide k
 -- pfold lift yield x = x

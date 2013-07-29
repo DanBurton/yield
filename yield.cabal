@@ -16,7 +16,10 @@ library
   exposed-modules:     Control.Yield,
                        Control.Yield.Proxy,
                        Control.Yield.Pipe,
-                       Control.Yield.Category
+                       Control.Yield.Category,
+                       Control.Yield.State,
+                       Control.Yield.Simple,
+                       Control.Yield.Internal
   other-modules:       Util
   build-depends:       base >= 4.6,
                        transformers >= 0.3,
