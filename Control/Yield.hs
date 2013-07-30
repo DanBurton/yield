@@ -1,15 +1,19 @@
-{-# LANGUAGE FlexibleInstances #-}     -- mtl instances
-{-# LANGUAGE MultiParamTypeClasses #-} -- mtl instances
-{-# LANGUAGE UndecidableInstances #-}  -- coverage condition (mtl instances)
-{-# LANGUAGE Rank2Types #-}            -- for hoist and inputThrough
+
+-- for mtl
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
+
+-- for hoist and inputThrough
+{-# LANGUAGE Rank2Types #-}
 
 module Control.Yield (
   -- * Types
   Producing,
   resume,
   fromStep,
-  Consuming(..),
-  ProducerState(..),
+  Consuming(Consuming, provide),
+  ProducerState(Produced, Done),
   Resumable,
 
   -- * Basic introduction and elimination
@@ -56,7 +60,7 @@ module Control.Yield (
   ) where
 
 import Util
-import Control.Yield.Internal
+import Control.Yield.External
 
 import Control.Arrow
 import Control.Applicative
@@ -101,16 +105,16 @@ type Resumable o i m r r'
 ----------------------------------------------------------------
 
 yield :: (Monad m) => o -> Producing o i m i
-yield o = Producing $ return $ Produced o $ Consuming return
+yield o = fromStep $ return $ Produced o $ Consuming return
 
 
 -- The first argument is just a specialization of
 -- (forall x. m x -> m' x)
-pfold :: (Monad n)
+pfold :: (Monad m, Monad n)
   => (forall x. m x -> n x) -- (m (ProducerState o i m r) -> m' (ProducerState o i m r))
   -> (o -> n i) -> Producing o i m r -> n r
 pfold morph yield' = go where
-  go p = morph (unProducing p) >>= \s -> case s of
+  go p = morph (resume p) >>= \s -> case s of
     Done r -> return r
     Produced o k -> yield' o >>= go . provide k
 -- pfold lift yield x = x
@@ -140,7 +144,7 @@ overProduction f k = Consuming (f . provide k)
 overConsumption :: (Monad m)
   => (Consuming r m i o -> Consuming r m i' o)
   ->  Producing o i m r -> Producing o i' m r
-overConsumption f p = Producing $ resume p >>= \s -> case s of
+overConsumption f p = fromStep $ resume p >>= \s -> case s of
   Done r -> return $ Done r
   Produced o k -> return $ Produced o (f k)
 -- overConsumption f ∘ overConsumption g = overConsumption (f ∘ g)
@@ -222,9 +226,9 @@ p $~ k = p $- Consuming k
 
 connectResume :: (Monad m) => Consuming r m b a -> Consuming r' m a b -> b -> m (Resumable b a m r r')
 connectResume k1 k2 = \b -> resume (provide k1 b) >>= \s -> case s of
-  Done r -> return (Right (Produced b k2, r))
+  Done r -> return (Left (r, Produced b k2))
   (Produced a k1') -> resume (provide k2 a) >>= \s2 -> case s2 of
-    Done r' -> return (Left (Produced a k1', r'))
+    Done r' -> return (Right (Produced a k1', r'))
     Produced b' k2' -> connectResume k1' k2' b'
 
 
@@ -252,7 +256,7 @@ voidC = overProduction void
 ------------------------------------------------------------------
 
 -- hoist = map
-hoist :: (Monad n)
+hoist :: (Monad m, Monad n)
   {- => (  m  (ProducerState o i m r)
      -> m' (ProducerState o i m r)) -}
   => (forall x. m x -> n x)
@@ -275,7 +279,7 @@ squash = yieldingTo yield
 
 
 -- embed = bind
-embed :: (Monad n)
+embed :: (Monad m, Monad n)
   => (forall x. m x -> Producing i o n x)
   -> Producing i o m r -> Producing i o n r
 embed f m = squash (hoist f m)
@@ -291,11 +295,11 @@ selfConnection = yieldingTo return
 
 
 -- inputThrough = extend
-inputThrough :: (Monad n, Monad m)
+inputThrough :: (Monad m, Monad n)
   => (forall x. Producing j k m x -> n x)
   -> Producing i k m r -> Producing i j n r
 inputThrough morph = go where
-    go p = Producing $ morph $ liftM map' (lift (resume p))
+    go p = fromStep $ morph $ liftM map' (lift (resume p))
     map' (Done r) = Done r
     map' (Produced i consuming) = Produced i $ Consuming $ \j -> do
       k <- lift (jToK j)
@@ -369,14 +373,14 @@ instance (Monad m) => Applicative (Producing o i m) where
 
 instance (Monad m) => Monad (Producing o i m) where
    return x = lift (return x)
-   p >>= f = Producing $ resume p >>= \s -> case s of
+   p >>= f = fromStep $ resume p >>= \s -> case s of
      Done r -> resume (f r)
      Produced o k -> return $ Produced o $ Consuming (provide k >=> f)
    fail = lift . fail
 
 
 instance MonadTrans (Producing o i) where
-  lift m = Producing (liftM Done m)
+  lift m = fromStep $ liftM Done m
 
 
 instance (Monad m, MonadIO m) => MonadIO (Producing o i m) where
@@ -406,13 +410,13 @@ instance (Monad m, MonadState r m) => MonadState r (Producing o i m) where
 instance (Monad m, Monoid w, MonadWriter w m) => MonadWriter w (Producing o i m) where
   writer = lift . writer
   tell = lift . tell
-  listen m = Producing $ listen (resume m) >>= \(s, w) -> case s of
+  listen m = fromStep $ listen (resume m) >>= \(s, w) -> case s of
     Done r -> return $ Done (r, w)
     Produced o k ->
       let k' = liftM (second (w <>)) . listen . provide k
       in return $ Produced o (Consuming k')
   -- not sure if this is legit
-  pass m = Producing $ pass $ resume m >>= \s -> case s of
+  pass m = fromStep $ pass $ resume m >>= \s -> case s of
     Done (r, f) -> return (Done r, f)
     Produced o k ->
       let k' = pass . provide k
@@ -430,7 +434,7 @@ instance (Monad m, MonadError e m) => MonadError e (Producing o i m) where
       safely m = liftM Right m `catchError` \e -> return (Left e)
 
 instance (Monad m, MonadCont m) => MonadCont (Producing o i m) where
-  callCC f = Producing $ callCC $ \k ->
+  callCC f = fromStep $ callCC $ \k ->
     resume (f $ lift . k . Done)
 
 -- Consuming instances

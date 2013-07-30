@@ -19,8 +19,9 @@ library
                        Control.Yield.Category,
                        Control.Yield.State,
                        Control.Yield.Simple,
-                       Control.Yield.Internal
-  other-modules:       Util
+                       Control.Yield.Internal,
+                       Control.Yield.External
+  other-modules:       Util, Control.Yield.Flat, Control.Yield.Cont
   build-depends:       base >= 4.6,
                        transformers >= 0.3,
                        mtl >= 2.1,

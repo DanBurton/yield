@@ -15,10 +15,6 @@ newtype Consuming r m i o
   = Consuming { provide :: i -> Producing o i m r }
 
 
-type Resumable o i m r r'
-  = Either (ProducerState i o m r, r') (ProducerState o i m r', r)
-
-
 fromStep :: (Monad m) => m (ProducerState o i m r) -> Producing o i m r
 fromStep = Producing
 {-# INLINE fromStep #-}
