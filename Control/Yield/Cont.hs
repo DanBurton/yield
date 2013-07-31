@@ -19,9 +19,6 @@ data ProducerState o i m a
   = Produced o (Consuming a m i o)
   | Done a
 
-yield :: Monad m => o -> Producing o i m i
-yield o = Producing ($ o)
-
 fromStep :: Monad m => m (ProducerState o i m a) -> Producing o i m a
 fromStep p = Producing $ \yield' -> lift p >>= \s -> case s of
   Done a -> return a
@@ -33,4 +30,12 @@ resume :: Monad m => Producing o i m a -> m (ProducerState o i m a)
 resume p = runContT (p `using` yield') (return . Done) where
   -- yield' :: o -> ContT (ProducerState o i m a) m i
   yield' o = ContT $ \k -> return $ Produced o $ Consuming (fromStep . k)
+
+
+-- Alternate implementations
+---------------------------------------------------------------------------
+
+yield :: Monad m => o -> Producing o i m i
+yield o = Producing ($ o)
+
 

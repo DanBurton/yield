@@ -25,13 +25,12 @@ module Control.Yield (
   overConsumption,
   overProduction,
   afterYielding,
-  
+
   -- * Meaningful specializations of pfold
   replaceYield,
   foreverYield,
   yieldingTo,
   foreach,
-  ($//),
   (/$/),
 
   -- * Connecting computations
@@ -189,17 +188,12 @@ foreach = flip yieldingTo
 -- p `foreach` k = p $- foreverYield k
 
 
-($//) :: (Monad m, MonadTrans t, Monad (t m))
-  => Producing o i m r -> (o -> t m i) -> t m r
-p $// k = replaceYield k p
-
-
 infixr 4 /$/
 -- composable replaceYield with monoid laws
 (/$/) :: (Monad m, MonadTrans t, Monad (t m))
   => (a -> Producing o i m r) -> (o -> t m i)
   -> (a -> t m r)
-k1 /$/ k2 = \i -> k1 i $// k2
+k1 /$/ k2 = replaceYield k2 . k1
 -- yield /$/ x = x
 -- x /$/ yield = x
 -- a /$/ (b />/ c) = (a />/ b) />/ c
