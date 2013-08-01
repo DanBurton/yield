@@ -6,6 +6,8 @@ module Control.Yield.Cont where
 import Control.Monad.Trans.Cont
 import Control.Monad.Trans.Class
 
+import Control.Monad (liftM)
+
 infix 2 `provide`
 infix 1 `using`
 
@@ -38,4 +40,21 @@ resume p = runContT (p `using` yield') (return . Done) where
 yield :: Monad m => o -> Producing o i m i
 yield o = Producing ($ o)
 
+
+pfold :: forall m n o i r.
+  (Monad m, Monad n)
+  => (forall x. m x -> n x)
+  -> (o -> n i) -> Producing o i m r -> n r
+pfold morph yield' p = runContT c return where
+  c = hoist morph p `using` lift . yield'
+
+
+-- ew! Want to implement this more... continuation-y
+hoist :: (Monad m, Monad n)
+  => (forall x. m x -> n x)
+  -> Producing o i m r -> Producing o i n r
+hoist morph = go where
+  go p = fromStep $ liftM convert (morph (resume p)) where
+    convert (Done r) = Done r
+    convert (Produced o k) = Produced o (Consuming (go . provide k))
 
