@@ -6,7 +6,7 @@ module Control.Yield.Category (
   )where
 
 import Util
-import Control.Yield
+import Control.Yield hiding ((/>/))
 import Control.Applicative
 
 newtype YieldC m a b = YieldC { unYieldC ::
